@@ -14,13 +14,15 @@
 #include "jpegrw.h"
 #include <sys/wait.h>
 #include <time.h>
+#include <math.h>
 
 
 // local routines
-static int iteration_to_color( int i, int max );
+static int iteration_to_color( int i, int max, int color_scheme );
 static int iterations_at_point( double x, double y, int max );
 static void compute_image( imgRawImage *img, double xmin, double xmax,
-									double ymin, double ymax, int max );
+									double ymin, double ymax, int max, 
+									int color_scheme );
 static void show_help();
 
 
@@ -111,7 +113,8 @@ int main(int argc, char *argv[]) {
                               xcenter + scale / 2,
                               ycenter - yscale / 2,
                               ycenter + yscale / 2,
-                              max);
+                              max, 
+							  i); //Index is the color scheme
 
                 // Save the image to the unique filename
                 storeJpegImageFile(img, filename);
@@ -170,7 +173,7 @@ Compute an entire Mandelbrot image, writing each point to the given bitmap.
 Scale the image to the range (xmin-xmax,ymin-ymax), limiting iterations to "max"
 */
 
-void compute_image(imgRawImage* img, double xmin, double xmax, double ymin, double ymax, int max )
+void compute_image(imgRawImage* img, double xmin, double xmax, double ymin, double ymax, int max, int color_scheme )
 {
 	int i,j;
 
@@ -191,7 +194,7 @@ void compute_image(imgRawImage* img, double xmin, double xmax, double ymin, doub
 			int iters = iterations_at_point(x,y,max);
 
 			// Set the pixel in the bitmap.
-			setPixelCOLOR(img,i,j,iteration_to_color(iters,max));
+			setPixelCOLOR(img,i,j,iteration_to_color(iters,max, color_scheme));
 		}
 	}
 }
@@ -202,10 +205,35 @@ Convert a iteration number to a color.
 Here, we just scale to gray with a maximum of imax.
 Modify this function to make more interesting colors.
 */
-int iteration_to_color( int iters, int max )
+int iteration_to_color( int iters, int max, int color_scheme )
 {
-	int color = 0xFFFFFF*iters/(double)max;
-	return color;
+	double t = (double)iters / max;
+	int r, g, b;
+
+	switch (color_scheme % 4) {
+		case 0:
+			r = g = b = (int)(255 * t);
+			break;
+		case 1:
+			r = (int)(255 * t);
+			g = 0;
+			b = (int)(255 * (1-t));
+			break;
+		case 2:
+			r = (int)(128 + 127 * sin(6.28 * t + 0));
+			g = (int)(128 + 127 * sin(6.28 * t + 2 * M_PI / 3));
+			b = (int)(128 + 127 * sin(6.28 * t + 4 * M_PI / 3));
+			break;
+		case 3:
+			r = (iters % 16) * 16;
+			g = (iters % 32) * 8;
+			b = (iters % 64) * 4;
+			break;
+	}
+	return (r << 16) | (g << 8) | b;
+
+	//int color = 0xFFFFFF*iters/(double)max;
+	//return color;
 }
 
 
