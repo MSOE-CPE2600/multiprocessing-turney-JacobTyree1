@@ -15,6 +15,15 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <math.h>
+#include <pthread.h>
+
+#define MAX_THREADS 20
+
+typedef struct {
+    imgRawImage *img;
+    double xmin, xmax, ymin, ymax;
+    int max, color_scheme, thread_id, num_threads;
+} ThreadData;
 
 
 // local routines
@@ -22,8 +31,10 @@ static int iteration_to_color( int i, int max, int color_scheme );
 static int iterations_at_point( double x, double y, int max );
 static void compute_image( imgRawImage *img, double xmin, double xmax,
 									double ymin, double ymax, int max, 
-									int color_scheme );
+									int color_scheme, int num_threads );
 static void show_help();
+
+void *thread_compute(void *arg);
 
 
 int main(int argc, char *argv[]) {
@@ -40,9 +51,10 @@ int main(int argc, char *argv[]) {
     int num_processes = 1;
     int max = 1000;
     int total_images = 50;
+    int num_threads = 1;
 
     // Parse command-line arguments
-    while ((c = getopt(argc, argv, "x:y:s:W:H:m:o:n:t:h")) != -1) {
+    while ((c = getopt(argc, argv, "x:y:s:W:H:m:o:n:t:T:h")) != -1) {
         switch (c) {
             case 'x':
                 xcenter = atof(optarg);
@@ -70,6 +82,13 @@ int main(int argc, char *argv[]) {
                 break;
             case 't':
                 total_images = atoi(optarg);
+                break;
+            case 'T':
+                num_threads = atoi(optarg);
+                if (num_threads < 1 || num_threads > MAX_THREADS) {
+                    fprintf(stderr, "Error: Number of threads must be between 1 and 20\n");
+                    exit(1);
+                }
                 break;
             case 'h':
                 show_help();
@@ -114,7 +133,8 @@ int main(int argc, char *argv[]) {
                               ycenter - yscale / 2,
                               ycenter + yscale / 2,
                               max, 
-							  i); //Index is the color scheme
+							  i,//Index is the color scheme
+                              num_threads); 
 
                 // Save the image to the unique filename
                 storeJpegImageFile(img, filename);
@@ -173,9 +193,31 @@ Compute an entire Mandelbrot image, writing each point to the given bitmap.
 Scale the image to the range (xmin-xmax,ymin-ymax), limiting iterations to "max"
 */
 
-void compute_image(imgRawImage* img, double xmin, double xmax, double ymin, double ymax, int max, int color_scheme )
+void compute_image(imgRawImage* img, double xmin, double xmax, double ymin, double ymax, int max, int color_scheme, int num_threads )
 {
-	int i,j;
+
+    pthread_t threads[MAX_THREADS];
+    ThreadData thread_data[MAX_THREADS];
+
+    for(int t = 0; t < num_threads; t++) {
+        thread_data[t] = (ThreadData){
+            .img = img,
+            .xmin = xmin,
+            .xmax = xmax, 
+            .ymin = ymin,
+            .ymax = ymax, 
+            .max = max,
+            .color_scheme = color_scheme, 
+            .thread_id = t, 
+            .num_threads = num_threads, 
+        };
+        pthread_create(&threads[t], NULL, thread_compute, &thread_data[t]);
+    }
+    //Waiting for threads to complete
+    for (int t = 0; t < num_threads; t++) {
+        pthread_join(threads[t], NULL);
+    }
+	/*int i,j;
 
 	int width = img->width;
 	int height = img->height;
@@ -196,7 +238,7 @@ void compute_image(imgRawImage* img, double xmin, double xmax, double ymin, doub
 			// Set the pixel in the bitmap.
 			setPixelCOLOR(img,i,j,iteration_to_color(iters,max, color_scheme));
 		}
-	}
+	} */
 }
 
 
@@ -254,4 +296,24 @@ void show_help()
 	printf("mandel -x -0.5 -y -0.5 -s 0.2\n");
 	printf("mandel -x -.38 -y -.665 -s .05 -m 100\n");
 	printf("mandel -x 0.286932 -y 0.014287 -s .0005 -m 1000\n\n");
+}
+
+void *thread_compute(void *arg) {
+    ThreadData *data = (ThreadData *)arg;
+
+    int width = data->img->width;
+    int height = data->img->height;
+
+    int start_row = (data->thread_id * height) / data->num_threads;
+    int end_row = ((data->thread_id + 1) * height) / data->num_threads;
+
+    for(int j = start_row; j < end_row; j++) {
+        for (int i = 0; i < width; i ++) {
+            double x = data->xmin + i * (data->xmax - data->xmin) / width;
+            double y = data->ymin + j * (data->ymax - data->ymin) / height;
+            int iters = iterations_at_point(x, y, data->max);
+            setPixelCOLOR(data->img, i, j, iteration_to_color(iters, data->max, data->color_scheme));
+        }
+    }
+    pthread_exit(NULL);
 }

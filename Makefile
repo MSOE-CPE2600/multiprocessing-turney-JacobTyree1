@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS=-c -Wall -g
-LDFLAGS=-ljpeg -lm
+LDFLAGS=-ljpeg -lm -pthread
 SOURCES= mandel.c jpegrw.c 
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=mandel
